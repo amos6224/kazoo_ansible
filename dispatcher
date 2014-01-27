@@ -1,0 +1,11 @@
+### Dispatcher Set IDs:
+### 1 - Primary media servers
+### 2 - Backup media servers
+### 3 - Alternate media server IPs (used only for classification)
+### 10 - Presence servers (if not locally handled)
+### 20 - Registrar servers (if not locally handled)
+
+# setid(integer) destination(sip uri) flags (integer, optional)
+{% for backend in groups['bigcouch'] %}
+1 sip:{{ hostvars[backend]['ansible_eth0']['ipv4']['address'] }}:11000 2
+{% endfor %}

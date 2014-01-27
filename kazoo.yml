@@ -1,0 +1,172 @@
+##############################################################################
+# Kazoo server v3, installed according to  
+# https://2600hz.atlassian.net/wiki/pages/viewpage.action?pageId=39223316
+
+
+- hosts: all
+  gather_facts: yes
+
+# TODO: Check and validate FQDN
+
+- hosts: kazoo
+  gather_facts: yes
+  tasks:
+  - name: repo for 2600
+    copy:
+      content: |
+        [2600hz_base]
+        name=2600hz-$releasever - Base
+        baseurl=http://repo.2600hz.com/base/
+        gpgcheck=0
+        enabled=1
+
+        [2600hz_R15B]
+        name=2600hz-$releasever - R15B
+        baseurl=http://repo.2600hz.com/R15B/
+        gpgcheck=0
+        enabled=1
+      dest: /etc/yum.repos.d/2600hz.repo
+
+  - name: install kazoo packages
+    yum:
+      name: "{{item}}"
+      state: present
+    with_items:
+      - esl-erlang
+      - kazoo-R15B
+      - kazoo-ui
+      - kazoo-kamailio
+      - haproxy
+      - rsyslog
+      - httpd
+
+  - name: Install /etc/kazoo/kamailio/local.cfg
+    template:
+      src: kamailio_local.cfg
+      dest: /etc/kazoo/kamailio/local.cfg
+
+  - name: haproxy configuration
+    template: 
+      src: haproxy.cfg
+      dest: /etc/haproxy/haproxy.cfg
+    notify:
+      - restart haproxy
+
+  - name: Install kazoo-ui configuration
+    template:
+      src: config.js
+      dest: /var/www/html/kazoo-ui/config/config.js
+
+  - name: Install dispatcher config
+    template:
+      src: dispatcher
+      dest: /etc/kazoo/kamailio/dbtext/dispatcher
+
+  - name: ensure services started
+    service:
+      state: restarted
+      name: "{{item}}"
+    with_items:
+    - rsyslog
+    - rabbitmq-server
+    - haproxy
+    - kz-whistle_apps
+    - kz-ecallmgr
+    - kamailio
+    - httpd
+
+  handlers:
+  - name: restart haproxy
+    service:
+      state: restarted
+      name: haproxy
+
+
+##############################################################################
+# Freeswitch server
+
+- hosts: freeswitch
+  gather_facts: yes
+  tasks:
+  - name: install freeswitch packages
+    yum:
+      name: "{{item}}"
+      state: present
+    with_items:
+    - esl-erlang
+    - kazoo-freeswitch-R15B
+    notify:
+    - restart freeswitch
+
+  - name: Install kazoo.conf.xml
+    template:
+      src: kazoo.conf.xml
+      dest: /etc/kazoo/freeswitch/autoload_configs/kazoo.conf.xml
+    notify:
+    - restart freeswitch
+
+  # Apparently I'm supposed to start epmd -daemon, but that operation isn't
+  # idempotent. I'm ignoring it for now. If that ain't enough, i'll have to 
+  # come up with an init script.
+
+  handlers:
+  - name: restart freeswitch
+    service:
+      state: restarted
+      name: freeswitch
+
+
+##############################################################################
+# Freeswitch server
+
+- hosts: freeswitch
+  gather_facts: yes
+  tasks:
+  - name: install bigcouch packages
+    yum:
+      name: "{{item}}"
+      state: installed
+    with_items:
+    - kazoo-bigcouch-R15B
+    - python-httplib2
+
+  # TODO: cluster bigcouch
+
+  - name: check that we can reach BigCouch on port 5986
+    uri: 
+      url: "http://localhost:5986"
+
+  - name: check that we can reach the underlying CouchDB server on port 5984
+    uri: 
+      url: "http://localhost:5984"
+
+
+##############################################################################
+# Post installation
+
+- hosts: kazoo
+  gather_facts: yes
+  tasks:
+  - name: install python httplib packages
+    yum:
+      name: "{{item}}"
+      state: installed
+    with_items:
+    - python-httplib2
+
+  - name: check that we can reach BigCouch on port 5986
+    uri: 
+      url: "http://localhost:15984"
+
+# TODO:
+
+#/opt/kazoo/utils/sup/sup crossbar_maintenance create_account koert sip2.voipbird.com koert hunter2
+#/opt/kazoo/utils/sup/sup whapps_config flush
+#/opt/kazoo/utils/sup/sup -n ecallmgr ecallmgr_config flush
+#erlang nodes list
+#kamctl fifo ds_list
+#/opt/kazoo/utils/media_importer/media_importer /opt/kazoo/system_media/*.wav
+## If the above does not work, please use the syntax below. Where hostname is the FQDN of your kazoo server.
+#/opt/kazoo/utils/media_importer/media_importer -h <hostname> -P 15984 /opt/kazoo/system_media/*.wav 
+ 
+
